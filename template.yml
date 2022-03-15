@@ -1,0 +1,823 @@
+# Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+# SPDX-License-Identifier: MIT-0
+AWSTemplateFormatVersion: 2010-09-09
+Transform: AWS::Serverless-2016-10-31
+
+Description: >
+  This template deploys a web application infrastructure for private VPC access only.
+
+Parameters:
+  Environment:
+    Description: Environment name for identification purpose
+    Type: String
+    Default: PrivateWebApp
+  BucketNamePrefix:
+    Description: Prefix of S3 buckets name generated
+    Type: String
+    AllowedPattern: '^[a-z0-9.-]{2,25}$'
+  DomainName:
+    Description: Domain name for application
+    Type: String
+  HostedZoneID:
+    Description: Amazon Route 53 private hosted zone ID
+    Type: AWS::Route53::HostedZone::Id
+  SSLCertID:
+    Description: The ARN of the SSL certificate to be used
+    Type: String
+  VpcID:
+    Description: VPC ID of the VPC where you are accessing the application
+    Type: AWS::EC2::VPC::Id
+  SubnetIDs:
+    Description: Two or more subnet IDs where you want to access the application from
+    Type: List<AWS::EC2::Subnet::Id>
+  IngressCidr:
+    Description: CIDR address range allowed to access the application
+    Type: String
+    AllowedPattern: ((\d{1,3})\.){3}\d{1,3}/\d{1,2}
+
+
+Mappings:
+  S3Config:
+    us-east-1:
+      BucketPrincipal: '127311923021'
+    us-east-2:
+      BucketPrincipal: '033677994240'
+    us-west-1:
+      BucketPrincipal: '027434742980'
+    us-west-2:
+      BucketPrincipal: '797873946194'
+    af-south-1:
+      BucketPrincipal: '098369216593'
+    ca-central-1:
+      BucketPrincipal: '985666609251'
+    eu-central-1:
+      BucketPrincipal: '054676820928'
+    eu-west-1:
+      BucketPrincipal: '156460612806'
+    eu-west-2:
+      BucketPrincipal: '652711504416'
+    eu-west-3:
+      BucketPrincipal: '009996457667'
+    eu-north-1:
+      BucketPrincipal: '897822967062'
+    ap-east-1:
+      BucketPrincipal: '754344448648'
+    ap-northeast-1:
+      BucketPrincipal: '582318560864'
+    ap-northeast-2:
+      BucketPrincipal: '600734575887'
+    ap-northeast-3:
+      BucketPrincipal: '383597477331'
+    ap-southeast-1:
+      BucketPrincipal: '114774131450'
+    ap-southeast-2:
+      BucketPrincipal: '783225319266'
+    ap-south-1:
+      BucketPrincipal: '718504428378'
+    me-south-1:
+      BucketPrincipal: '076674570225'
+    sa-east-1:
+      BucketPrincipal: '507241528517'
+    us-gov-west-1:
+      BucketPrincipal: '048591011584'
+    us-gov-east-1:
+      BucketPrincipal: '190560391635'
+    cn-north-1:
+      BucketPrincipal: '638102146993'
+    cn-northwest-1:
+      BucketPrincipal: '037604701340'
+
+Resources:
+
+  #############################################################
+  # S3 bucket storing static website
+  #############################################################
+  StaticWebsiteBucket:
+    Type: AWS::S3::Bucket
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      BucketName: !Sub "${BucketNamePrefix}-static-website-${AWS::AccountId}-${AWS::Region}"
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: True
+        BlockPublicPolicy: True
+        IgnorePublicAcls: True
+        RestrictPublicBuckets: True
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+        - ServerSideEncryptionByDefault:
+            SSEAlgorithm: AES256
+
+  StaticWebsiteBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket:
+        Ref: StaticWebsiteBucket
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+        - Sid: Grant API gateway role to get website contents
+          Effect: Allow
+          Action:
+          - s3:GetObject
+          Resource:
+          - !Sub 'arn:aws:s3:::${StaticWebsiteBucket}/*'
+          Principal:
+            AWS: !GetAtt StaticWebsiteBucketRole.Arn
+        - Sid: Grant API gateway role to list website contents
+          Effect: Allow
+          Action:
+          - s3:ListBucket
+          Resource:
+          - !Sub 'arn:aws:s3:::${StaticWebsiteBucket}'
+          Principal:
+            AWS: !GetAtt StaticWebsiteBucketRole.Arn
+        - Sid: DenyInsecureConnections
+          Effect: Deny
+          Principal: "*"
+          Action: s3:*
+          Resource:
+            Fn::Sub: arn:aws:s3:::${StaticWebsiteBucket}/*
+          Condition:
+            Bool:
+              aws:SecureTransport: false
+
+  StaticWebsiteBucketRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          -
+            Effect: Allow
+            Action: sts:AssumeRole
+            Principal:
+              Service:
+                - apigateway.amazonaws.com
+      Path: "/"
+      Policies:
+        - PolicyName: StaticWebsiteRolePolicy
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Action:
+                - s3:ListBucket
+                Resource:
+                - !Sub 'arn:aws:s3:::${StaticWebsiteBucket}'
+              - Effect: Allow
+                Action:
+                - s3:GetObject
+                Resource:
+                - !Sub 'arn:aws:s3:::${StaticWebsiteBucket}/*'
+
+  #############################################################
+  # s3 bucket storing ALB access log
+  #############################################################
+  AccessLogBucket:
+    Type: AWS::S3::Bucket
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      BucketName: !Sub "${BucketNamePrefix}-access-log-${AWS::AccountId}-${AWS::Region}"
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: True
+        BlockPublicPolicy: True
+        IgnorePublicAcls: True
+        RestrictPublicBuckets: True
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+        - ServerSideEncryptionByDefault:
+            SSEAlgorithm: 'AES256'
+
+  AccessLogBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket:
+        Ref: AccessLogBucket
+      PolicyDocument:
+        Version: 2012-10-17
+        Statement:
+        - Sid: DenyInsecureConnections
+          Effect: Deny
+          Principal: '*'
+          Action: s3:*
+          Resource: !Sub '${AccessLogBucket.Arn}/*'
+          Condition:
+            Bool:
+              aws:SecureTransport: false
+        - Sid: AddPerm
+          Effect: Allow
+          Principal:
+            AWS: !FindInMap
+              - S3Config
+              - !Ref 'AWS::Region'
+              - BucketPrincipal
+          Action: s3:PutObject
+          Resource: !Sub 'arn:aws:s3:::${AccessLogBucket}/*'
+        - Sid: AWSLogDeliveryWrite
+          Effect: Allow
+          Principal:
+            Service: delivery.logs.amazonaws.com
+          Action: s3:PutObject
+          Resource: !Sub 'arn:aws:s3:::${AccessLogBucket}/*'
+          Condition:
+            StringEquals:
+              s3:x-amz-acl: bucket-owner-full-control
+        - Sid: AWSLogDeliveryAclCheck
+          Effect: Allow
+          Principal:
+            Service: delivery.logs.amazonaws.com
+          Action: s3:GetBucketAcl
+          Resource: !Sub 'arn:aws:s3:::${AccessLogBucket}'
+
+  #############################################################
+  # VPC endpoint for ALB to invoke in private API gateway
+  #############################################################
+  ApiGatewayVpcEndpoint:
+    Type: "AWS::EC2::VPCEndpoint"
+    Properties:
+      SubnetIds: !Ref SubnetIDs
+      SecurityGroupIds:
+        - !Ref ApiGatewayVpcEndpointSecurityGroup
+      ServiceName: !Sub 'com.amazonaws.${AWS::Region}.execute-api'
+      VpcId: !Ref VpcID
+      VpcEndpointType: "Interface"
+      PrivateDnsEnabled: false
+
+  ApiGatewayVpcEndpointSecurityGroup:
+    Type: "AWS::EC2::SecurityGroup"
+    Properties:
+      GroupDescription: !Sub "Security group of API Gateway VPC Endpoint for ${Environment}"
+      GroupName: !Sub "${Environment}-VPCE-SG"
+      VpcId: !Ref VpcID
+      SecurityGroupIngress:
+      - Description: Allow HTTPS ingress from ALB
+        SourceSecurityGroupId: !GetAtt ALBSecurityGroup.GroupId
+        IpProtocol: "tcp"
+        FromPort: 443
+        ToPort: 443
+      SecurityGroupEgress:
+      - Description: Allow HTTPS egress to API Gateway
+        CidrIp: "0.0.0.0/0"
+        IpProtocol: "tcp"
+        FromPort: 443
+        ToPort: 443
+      Tags:
+        - Key: Name
+          Value: !Sub '${Environment}-VPCE-SG'
+
+  #############################################################
+  # Custom resource to retrieve IP addresses of VPC endpoint
+  #############################################################
+  GetVpcEndpointIPCustomResource:
+    Type: Custom::GetVpcEndpointIPCustomResource
+    Version: '1.0'
+    Properties:
+      ServiceToken: !GetAtt GetVpcEndpointIP.Arn
+      VpcEndpointId: !Ref ApiGatewayVpcEndpoint
+
+  GetVpcEndpointIPRole:
+    Type: AWS::IAM::Role
+    Properties:
+      ManagedPolicyArns:
+        -  arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          -
+            Effect: Allow
+            Principal:
+              Service:
+                - lambda.amazonaws.com
+            Action:
+              - sts:AssumeRole
+      Path: /
+      Policies:
+        - PolicyName: "GetVpcEndpointIPPolicy"
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - ec2:DescribeNetworkInterfaces
+                  - ec2:DescribeVpcEndpoints
+                Resource:
+                  - "*"
+
+  GetVpcEndpointIP:
+    Type: AWS::Lambda::Function
+    Properties:
+      Description: >-
+        Used by CloudFormation to retrieve IP addresses of VPC endpoint
+      Runtime: python3.8
+      Handler: index.lambda_handler
+      Role: !GetAtt 'GetVpcEndpointIPRole.Arn'
+      MemorySize: 2048
+      Timeout: 30
+      Code:
+        ZipFile: |
+          import json
+          import boto3
+          import cfnresponse
+          client = boto3.client('ec2')
+          def lambda_handler(event, context):
+              print('Received request:\n%s' % json.dumps(event, indent=2))
+              if event['RequestType'] in ['Create', 'Update']:
+                  try:
+                      VpcEndpointId = event['ResourceProperties']['VpcEndpointId']
+                      response = client.describe_vpc_endpoints(
+                          VpcEndpointIds=[VpcEndpointId,],
+                      )
+                      NetworkInterfaceIds = response['VpcEndpoints'][0]['NetworkInterfaceIds']
+                      #print(NetworkInterfaceIds)
+                      response = client.describe_network_interfaces(
+                          NetworkInterfaceIds=NetworkInterfaceIds,
+                      )
+                      PrivateIpAddress = [eni['PrivateIpAddress'] for eni in response['NetworkInterfaces']]
+                      #print(PrivateIpAddress)
+                  except:
+                      cfnresponse.send(event, context, cfnresponse.FAILED, {})
+                      raise
+                  else:
+                      cfnresponse.send(event, context, cfnresponse.SUCCESS,
+                                      {'VpcEndpointIpAddresses': PrivateIpAddress})
+              elif event['RequestType'] == 'Delete':
+                  cfnresponse.send(event, context, cfnresponse.SUCCESS, {})
+
+  #############################################################
+  # Application Load Balancer (ALB)
+  #############################################################
+  ApplicationLoadBalancerAlias:
+    Type: AWS::Route53::RecordSet
+    Properties:
+      AliasTarget:
+        DNSName: !GetAtt ApplicationLoadBalancer.DNSName
+        HostedZoneId: !GetAtt ApplicationLoadBalancer.CanonicalHostedZoneID
+      HostedZoneId: !Ref HostedZoneID
+      Name: !Ref DomainName
+      Type: A
+
+  ApplicationLoadBalancer:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      Name: !Sub '${Environment}-ALB'
+      LoadBalancerAttributes:
+      - Key: access_logs.s3.enabled
+        Value: "true"
+      - Key: access_logs.s3.bucket
+        Value: !Ref AccessLogBucket
+      - Key: access_logs.s3.prefix
+        Value: 'alb'
+      - Key: routing.http.drop_invalid_header_fields.enabled
+        Value: "true"
+      Scheme: internal
+      Subnets: !Ref SubnetIDs
+      SecurityGroups:
+        - !GetAtt ALBSecurityGroup.GroupId
+
+  ALBSecurityGroup:
+    Type: "AWS::EC2::SecurityGroup"
+    Properties:
+      GroupDescription: !Sub "Security group of ALB for ${Environment}"
+      GroupName: !Sub "${Environment}-ALB-SG"
+      VpcId: !Ref VpcID
+      SecurityGroupIngress:
+      - Description: Allow HTTP ingress to redirect to HTTPS
+        CidrIp: !Ref IngressCidr
+        IpProtocol: "tcp"
+        FromPort: 80
+        ToPort: 80
+      - Description: Allow HTTPS ingress to the ALB
+        CidrIp: !Ref IngressCidr
+        IpProtocol: "tcp"
+        FromPort: 443
+        ToPort: 443
+      Tags:
+        - Key: Name
+          Value: !Sub '${Environment}-ALB-SG'
+
+  ALBSecurityGroupEgress:
+    Type: 'AWS::EC2::SecurityGroupEgress'
+    Properties:
+      Description: Allow HTTPS egress to execute-api VPC endpoint
+      GroupId: !Ref ALBSecurityGroup
+      IpProtocol: tcp
+      FromPort: 443
+      ToPort: 443
+      DestinationSecurityGroupId: !Ref ApiGatewayVpcEndpointSecurityGroup
+
+  ALBListenerHTTP:
+   Type: "AWS::ElasticLoadBalancingV2::Listener"
+   Properties:
+     DefaultActions:
+       - Type: "redirect"
+         RedirectConfig:
+           Protocol: "HTTPS"
+           Port: 443
+           Host: "#{host}"
+           Path: "/#{path}"
+           Query: "#{query}"
+           StatusCode: "HTTP_301"
+     LoadBalancerArn: !Ref ApplicationLoadBalancer
+     Port: 80
+     Protocol: "HTTP"
+
+  ALBListenerWebsite:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      Certificates:
+      - CertificateArn: !Sub 'arn:aws:acm:${AWS::Region}:${AWS::AccountId}:certificate/${SSLCertID}'
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn: !Ref ALBApiGatewayTargetGroup
+      LoadBalancerArn: !Ref ApplicationLoadBalancer
+      Port: 443
+      Protocol: HTTPS
+      SslPolicy: ELBSecurityPolicy-TLS-1-2-2017-01
+
+  ALBApiGatewayTargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      Name: !Sub "${Environment}-Api-TG"
+      HealthCheckPath: /
+      HealthCheckEnabled: True
+      HealthCheckIntervalSeconds: 30
+      HealthCheckPort: 443
+      HealthCheckProtocol: HTTPS
+      HealthCheckTimeoutSeconds: 5
+      HealthyThresholdCount: 2
+      UnhealthyThresholdCount: 2
+      Matcher:
+        HttpCode: 200,403
+      TargetType: ip
+      Targets:
+        - Id: !Select [ 0, !GetAtt GetVpcEndpointIPCustomResource.VpcEndpointIpAddresses ]
+          Port: 443
+        - Id: !Select [ 1, !GetAtt GetVpcEndpointIPCustomResource.VpcEndpointIpAddresses ]
+          Port: 443
+      Port: 443
+      Protocol: HTTPS
+      VpcId: !Ref VpcID
+
+  #############################################################
+  # Web Application Firewall (WAF)
+  #############################################################
+  WafWebACL:
+    Type: AWS::WAFv2::WebACL
+    Properties:
+      Name: !Sub ${Environment}-WebACL
+      Scope: REGIONAL
+      Description: !Sub Baseline Web ACL for ${Environment} using AWS Managed Rules
+      DefaultAction:
+        Allow: {}
+      VisibilityConfig:
+        SampledRequestsEnabled: true
+        CloudWatchMetricsEnabled: true
+        MetricName: !Sub ${Environment}Metric
+      Rules:
+        - Name: AWS-AWSManagedRulesCommonRuleSet
+          Priority: 0
+          OverrideAction:
+            None: {}
+          VisibilityConfig:
+            SampledRequestsEnabled: true
+            CloudWatchMetricsEnabled: true
+            MetricName: CommonRuleSetMetric
+          Statement:
+            ManagedRuleGroupStatement:
+              VendorName: AWS
+              Name: AWSManagedRulesCommonRuleSet
+        - Name: AWS-AWSManagedRulesKnownBadInputsRuleSet
+          Priority: 1
+          OverrideAction:
+            None: {}
+          VisibilityConfig:
+            SampledRequestsEnabled: true
+            CloudWatchMetricsEnabled: true
+            MetricName: KnownBadInputsRuleSetMetric
+          Statement:
+            ManagedRuleGroupStatement:
+              VendorName: AWS
+              Name: AWSManagedRulesKnownBadInputsRuleSet
+
+  ALBWafAssociation:
+    Type: "AWS::WAFv2::WebACLAssociation"
+    Properties:
+      WebACLArn: !GetAtt WafWebACL.Arn
+      ResourceArn: !Ref ApplicationLoadBalancer
+
+  #############################################################
+  # API Gateway - custom domain name
+  #############################################################
+  ApiGatewayCustomDomain:
+    Type: AWS::ApiGatewayV2::DomainName
+    Properties:
+      DomainName: !Ref DomainName
+      DomainNameConfigurations:
+        - EndpointType: REGIONAL
+          CertificateArn:
+            !Sub 'arn:aws:acm:${AWS::Region}:${AWS::AccountId}:certificate/${SSLCertID}'
+
+  #############################################################
+  # Backend Lambda and API Gateway
+  #############################################################
+  BackendFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Description: !Sub |
+        Backend function for ${Environment}
+      Runtime: python3.8
+      Handler: index.lambda_handler
+      InlineCode: |
+        import json
+
+        def lambda_handler(event, context):
+          body = {"message": "Hello World!"}
+          return {
+            'statusCode': 200,
+            'body': json.dumps(body),
+          }
+      MemorySize: 128
+      Timeout: 10
+      Policies:
+        - AWSLambdaBasicExecutionRole
+      Events:
+        ApiEvent:
+          Type: Api
+          Properties:
+            RestApiId: !Ref BackendApi
+            Path: /hello
+            Method: post
+
+  BackendApi:
+    Type: AWS::Serverless::Api
+    DependsOn: BackendFunction
+    Properties:
+      StageName: prod
+      EndpointConfiguration:
+        Type: "PRIVATE"
+        VPCEndpointIds:
+          - !Ref ApiGatewayVpcEndpoint
+      OpenApiVersion: '3.0.1'
+      Auth:
+        ResourcePolicy:
+          IntrinsicVpceWhitelist:
+            - !Ref ApiGatewayVpcEndpoint
+      DefinitionBody:
+        openapi: "3.0.1"
+        info:
+          title: !Sub "${Environment}-BackendApi"
+        servers:
+          x-amazon-apigateway-endpoint-configuration:
+            vpcEndpointIds:
+            - !Ref ApiGatewayVpcEndpoint
+        paths:
+          /hello:
+            produces:
+              - "application/json"
+            post:
+              responses:
+                "200":
+                  description: "200 response"
+                  content:
+                    application/json:
+                      schema:
+                        $ref: "#/components/schemas/Empty"
+              x-amazon-apigateway-integration:
+                uri: !Sub 'arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${BackendFunction.Arn}/invocations'
+                responses:
+                  default:
+                    statusCode: "200"
+                passthroughBehavior: "when_no_match"
+                httpMethod: "POST"
+                contentHandling: "CONVERT_TO_TEXT"
+                type: "aws_proxy"
+        components:
+          schemas:
+            Empty:
+              title: "Empty Schema"
+              type: "object"
+
+  BackendApiMapping:
+    Type: AWS::ApiGatewayV2::ApiMapping
+    Properties:
+      ApiId: !Ref BackendApi
+      ApiMappingKey: api
+      DomainName: !Ref DomainName
+      Stage: !Ref BackendApi.Stage
+
+  #############################################################
+  # API Gateway for static website
+  #############################################################
+  StaticWebsiteFunctionApi:
+    Type: AWS::Serverless::Api
+    Properties:
+      StageName: prod
+      EndpointConfiguration:
+        Type: "PRIVATE"
+        VPCEndpointIds:
+          - !Ref ApiGatewayVpcEndpoint
+      OpenApiVersion: '3.0.1'
+      Auth:
+        ResourcePolicy:
+          IntrinsicVpceWhitelist:
+            - !Ref ApiGatewayVpcEndpoint
+      DefinitionBody:
+        openapi: "3.0.1"
+        info:
+          title: !Sub "${Environment}-StaticWebsiteFunctionApi"
+        paths:
+          /:
+            get:
+              parameters:
+              - name: "If-None-Match"
+                in: "header"
+                schema:
+                  type: "string"
+              - name: "If-Modified-Since"
+                in: "header"
+                schema:
+                  type: "string"
+              responses:
+                "404":
+                  description: "404 response"
+                  content: {}
+                "200":
+                  description: "200 response"
+                  headers:
+                    ETag:
+                      schema:
+                        type: "string"
+                    Last-Modified:
+                      schema:
+                        type: "string"
+                    Content-Type:
+                      schema:
+                        type: "string"
+                  content:
+                    application/json:
+                      schema:
+                        $ref: "#/components/schemas/Empty"
+                "400":
+                  description: "400 response"
+                  content: {}
+                "500":
+                  description: "500 response"
+                  content: {}
+                "304":
+                  description: "304 response"
+                  headers:
+                    ETag:
+                      schema:
+                        type: "string"
+                    Last-Modified:
+                      schema:
+                        type: "string"
+                    Content-Type:
+                      schema:
+                        type: "string"
+                  content: {}
+              x-amazon-apigateway-integration:
+                credentials: !GetAtt StaticWebsiteBucketRole.Arn
+                httpMethod: "GET"
+                uri: !Sub "arn:aws:apigateway:${AWS::Region}:s3:path/${StaticWebsiteBucket}/index.html"
+                responses:
+                  "4\\d{2}":
+                    statusCode: "400"
+                  default:
+                    statusCode: "200"
+                    responseParameters:
+                      method.response.header.ETag: "integration.response.header.ETag"
+                      method.response.header.Content-Type: "integration.response.header.Content-Type"
+                      method.response.header.Last-Modified: "integration.response.header.Last-Modified"
+                  "304":
+                    statusCode: "304"
+                    responseParameters:
+                      method.response.header.ETag: "integration.response.header.ETag"
+                      method.response.header.Content-Type: "''"
+                      method.response.header.Last-Modified: "integration.response.header.Last-Modified"
+                  "404":
+                    statusCode: "404"
+                    responseTemplates:
+                      application/json: "#set($inputRoot = $input.path('$'))\n{\n  \"message\"\
+                        \ : \"Not Found\"\n}"
+                  "5\\d{2}":
+                    statusCode: "500"
+                requestParameters:
+                  integration.request.header.If-Modified-Since: "method.request.header.If-Modified-Since"
+                  integration.request.header.If-None-Match: "method.request.header.If-None-Match"
+                passthroughBehavior: "when_no_match"
+                type: "aws"
+          /{proxy+}:
+            get:
+              parameters:
+              - name: "If-None-Match"
+                in: "header"
+                schema:
+                  type: "string"
+              - name: "proxy"
+                in: "path"
+                required: true
+                schema:
+                  type: "string"
+              - name: "If-Modified-Since"
+                in: "header"
+                schema:
+                  type: "string"
+              responses:
+                "404":
+                  description: "404 response"
+                  content: {}
+                "200":
+                  description: "200 response"
+                  headers:
+                    ETag:
+                      schema:
+                        type: "string"
+                    Last-Modified:
+                      schema:
+                        type: "string"
+                    Content-Type:
+                      schema:
+                        type: "string"
+                  content:
+                    application/json:
+                      schema:
+                        $ref: "#/components/schemas/Empty"
+                "400":
+                  description: "400 response"
+                  content: {}
+                "500":
+                  description: "500 response"
+                  content: {}
+                "304":
+                  description: "304 response"
+                  headers:
+                    ETag:
+                      schema:
+                        type: "string"
+                    Last-Modified:
+                      schema:
+                        type: "string"
+                    Content-Type:
+                      schema:
+                        type: "string"
+                  content: {}
+              x-amazon-apigateway-integration:
+                credentials: !GetAtt StaticWebsiteBucketRole.Arn
+                httpMethod: "GET"
+                uri: !Sub "arn:aws:apigateway:${AWS::Region}:s3:path/${StaticWebsiteBucket}/{proxy}"
+                responses:
+                  "4\\d{2}":
+                    statusCode: "400"
+                  default:
+                    statusCode: "200"
+                    responseParameters:
+                      method.response.header.ETag: "integration.response.header.ETag"
+                      method.response.header.Content-Type: "integration.response.header.Content-Type"
+                      method.response.header.Last-Modified: "integration.response.header.Last-Modified"
+                  "304":
+                    statusCode: "304"
+                    responseParameters:
+                      method.response.header.ETag: "integration.response.header.ETag"
+                      method.response.header.Content-Type: "''"
+                      method.response.header.Last-Modified: "integration.response.header.Last-Modified"
+                  "404":
+                    statusCode: "404"
+                    responseTemplates:
+                      application/json: "#set($inputRoot = $input.path('$'))\n{\n  \"message\"\
+                        \ : \"Not Found\"\n}"
+                  "5\\d{2}":
+                    statusCode: "500"
+                requestParameters:
+                  integration.request.header.If-Modified-Since: "method.request.header.If-Modified-Since"
+                  integration.request.header.If-None-Match: "method.request.header.If-None-Match"
+                  integration.request.path.proxy: "method.request.path.proxy"
+                passthroughBehavior: "when_no_match"
+                type: "aws"
+        components:
+          schemas:
+            Empty:
+              title: "Empty Schema"
+              type: "object"
+
+  StaticWebsiteFunctionApiMapping:
+    Type: AWS::ApiGatewayV2::ApiMapping
+    Properties:
+      ApiId: !Ref StaticWebsiteFunctionApi
+      DomainName: !Ref DomainName
+      Stage: !Ref StaticWebsiteFunctionApi.Stage
+
+Outputs:
+  DomainName:
+    Description: FQDN domain for application
+    Value: !Ref DomainName
+
+  StaticWebsiteBucket:
+    Description: S3 bucket storing static website
+    Value: !Ref StaticWebsiteBucket
+
+  AccessLogBucket:
+    Description: S3 bucket for access log
+    Value: !Ref AccessLogBucket
