@@ -12,9 +12,6 @@ export AWS_PROFILE='REPLACE_ME'
 #########################################################################
 #                          Paramater Values                             #
 #########################################################################
-# Existing S3 Bucket where deployment assets for CloudFormation will be uploaded to
-DeploymentBucket='REPLACE_ME'
-
 # CloudFormation stack name
 StackName='PrivateWebApp'
 
@@ -42,26 +39,12 @@ IngressCidr='REPLACE_ME'
 ######################### Deployment commands ###########################
 #                     DO NOT EDIT BELOW THIS LINE                       #
 #########################################################################
-DeploymentBucketPrefix="privatewebapp-$(date +%m%d%y%H%M)"
 
 #########################################################################
-#                   Create all the deployment packages                  #
-#########################################################################
-# Takes local resources and uploads them to a specified s3 bucket.      #
-# Creates master template and nested templates with references to       #
-# those resources                                                       #
-#########################################################################
-aws cloudformation package \
-    --template-file template.yml \
-    --s3-bucket ${DeploymentBucket} \
-    --s3-prefix ${DeploymentBucketPrefix} \
-    --output-template-file template.packaged.yml
-
-#########################################################################
-# Deploy packaged stack                                                 #
+# Deploy CloudFormation stack                                           #
 #########################################################################
 aws cloudformation deploy \
-    --template-file template.packaged.yml \
+    --template-file template.yml \
     --stack-name ${StackName} \
     --parameter-overrides \
         "Environment=${StackName}" \

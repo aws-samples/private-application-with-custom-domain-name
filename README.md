@@ -32,7 +32,6 @@ Next, do the followings to deploy the architecture using AWS CloudFormation.
 
    | Variable Name    | Meaning                                                      | Example                                                      |
    | ---------------- | ------------------------------------------------------------ | ------------------------------------------------------------ |
-   | DeploymentBucket | Existing S3 Bucket where deployment assets for CloudFormation will be uploaded to | cloudformation-assets-3edf21fa                               |
    | StackName        | CloudFormation stack name                                    | PrivateWebApp                                                |
    | BucketNamePrefix | Prefix of S3 buckets name generated                          | privatewebapp                                                |
    | DomainName       | Domain name for application (without https://)               | www.myapp.com                                                |
