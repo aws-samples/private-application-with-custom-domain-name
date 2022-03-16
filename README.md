@@ -24,24 +24,25 @@ Before the solution is deployed, prepare the followings in your AWS account.
 
 ### Steps
 
-You could use a deployment script [deploy.sh]() to deploy automatically. To run `deploy.sh`, setup your development environment in Linux, macOS or [AWS Cloud9](https://docs.aws.amazon.com/cloud9/latest/user-guide/create-environment.html). Make sure [AWS CLI](https://docs.aws.amazon.com/cli/latest/userguide/install-cliv2.html) and [jq](https://stedolan.github.io/jq/download/) are installed.
+You need to deploy the CloudFormation stack and upload the static contents to S3 bucket. You could use a deployment script [deploy.sh](deploy.sh) to deploy automatically. To run [deploy.sh](deploy.sh), setup your development environment in Linux, macOS or [AWS Cloud9](https://docs.aws.amazon.com/cloud9/latest/user-guide/create-environment.html). Make sure [AWS CLI](https://docs.aws.amazon.com/cli/latest/userguide/install-cliv2.html) and [jq](https://stedolan.github.io/jq/download/) are installed.
 
 Next, do the followings to deploy the architecture using AWS CloudFormation.
 
-1. Modify the `deploy.sh`, replace the parameters of **REPLACE_ME** with the ones for your environments.
+1. Modify [deploy.sh](deploy.sh), replace the parameters of **REPLACE_ME** with the ones for your environments.
 
    | Variable Name    | Meaning                                                      | Example                                                      |
    | ---------------- | ------------------------------------------------------------ | ------------------------------------------------------------ |
    | StackName        | CloudFormation stack name                                    | PrivateWebApp                                                |
-   | BucketNamePrefix | Prefix of S3 buckets name generated                          | privatewebapp                                                |
+   | Environment      | Environment name for resource identification                 | PrivateWebApp                                                |
+   | BucketNamePrefix | Prefix of S3 buckets name generated (for static website and access log) | privatewebapp                                                |
    | DomainName       | Domain name for application (without https://)               | www.myapp.com                                                |
    | HostedZoneID     | Amazon Route 53 private hosted zone ID                       | Z08709521TMXDIJCU47RG                                        |
-   | SSLCertID        | The ARN of the SSL certificate to be used                    | 4e39d0d2-4c54-4dd5-9de4-bcc1d80428c8                         |
-   | VpcID            | VPC ID of the VPC where you are accessing the application    | vpc-aaae5bc5                                                 |
+   | SSLCertID        | SSL certificate ID for domain name                           | 4e39d0d2-4c54-4dd5-9de4-bcc1d80428c8                         |
+   | VpcID            | VPC ID of the VPC where you are deploying the application    | vpc-aaae5bc5                                                 |
    | SubnetIDs        | Two or more subnet IDs where you want to access the application from | subnet-075343772d89dce5e,subnet-022a8e66561d731cc,subnet-011408576543bfac0 |
    | IngressCidr      | CIDR address range allowed to access the application         | 172.31.0.0/16                                                |
 
-2. Run the script `deploy.sh`.
+2. Run the modified script  [deploy.sh](deploy.sh).  The script will deploy the CloudFormation stack and upload the static contents to S3 bucket.
 
 You will find all the resources created on the [AWS CloudFormation console](https://console.aws.amazon.com/cloudformation/home?#/stacks/).
 
@@ -53,7 +54,11 @@ When the script completes you could browse a sample web application hosted in yo
 
 ### Clean Up
 
-Delete the CloudFormation stack on AWS console. The default stack name is **PrivateWebApp**. Also, there are two Amazon S3 buckets retained with names beginning with **privatewebapp**. You can delete them manually.
+Delete the CloudFormation stack on AWS console. The default stack name is **PrivateWebApp**. Also, there are two Amazon S3 buckets (for static website and access log) retained with names beginning with **privatewebapp**. You can delete them manually.
+
+## Limitations
+
+- There is a 10 MB limit for static files served by API Gateway. Refer to [API Gateway quotas for configuring and running a REST API](https://docs.aws.amazon.com/apigateway/latest/developerguide/limits.html#api-gateway-execution-service-limits-table) for the maximum payload size of API Gateway.
 
 ## Security
 

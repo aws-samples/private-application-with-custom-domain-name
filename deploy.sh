@@ -15,7 +15,10 @@ export AWS_PROFILE='REPLACE_ME'
 # CloudFormation stack name
 StackName='PrivateWebApp'
 
-# Prefix of S3 buckets name generated (static and access log)
+# Environment name for resource identification
+Environment=${StackName}
+
+# Prefix of S3 buckets name generated (for static website and access log)
 BucketNamePrefix=$(echo -n "$StackName" | tr '[:upper:]' '[:lower:]' | sed 's|[^0-9a-z-]||g')
 
 # Domain name for application (without https://)
@@ -24,10 +27,10 @@ DomainName='REPLACE_ME'
 # Amazon Route 53 private hosted zone ID
 HostedZoneID='REPLACE_ME'
 
-# The ARN of the SSL certificate to be used
+# SSL certificate ID for domain name
 SSLCertID='REPLACE_ME'
 
-# VPC ID of the VPC where you are accessing the application
+# VPC ID of the VPC where you are deploying the application
 VpcID='REPLACE_ME'
 
 # Two or more subnet IDs where you want to access the application from
@@ -47,7 +50,7 @@ aws cloudformation deploy \
     --template-file template.yml \
     --stack-name ${StackName} \
     --parameter-overrides \
-        "Environment=${StackName}" \
+        "Environment=${Environment}" \
         "BucketNamePrefix=${BucketNamePrefix}" \
         "DomainName=${DomainName}" \
         "HostedZoneID=${HostedZoneID}" \
