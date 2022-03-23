@@ -122,7 +122,7 @@ Resources:
           Action:
           - s3:GetObject
           Resource:
-          - !Sub 'arn:aws:s3:::${StaticWebsiteBucket}/*'
+          - !Sub 'arn:${AWS::Partition}:s3:::${StaticWebsiteBucket}/*'
           Principal:
             AWS: !GetAtt StaticWebsiteBucketRole.Arn
         - Sid: Grant API gateway role to list website contents
@@ -130,7 +130,7 @@ Resources:
           Action:
           - s3:ListBucket
           Resource:
-          - !Sub 'arn:aws:s3:::${StaticWebsiteBucket}'
+          - !Sub 'arn:${AWS::Partition}:s3:::${StaticWebsiteBucket}'
           Principal:
             AWS: !GetAtt StaticWebsiteBucketRole.Arn
         - Sid: DenyInsecureConnections
@@ -138,7 +138,7 @@ Resources:
           Principal: "*"
           Action: s3:*
           Resource:
-            Fn::Sub: arn:aws:s3:::${StaticWebsiteBucket}/*
+            Fn::Sub: arn:${AWS::Partition}:s3:::${StaticWebsiteBucket}/*
           Condition:
             Bool:
               aws:SecureTransport: false
@@ -165,12 +165,12 @@ Resources:
                 Action:
                 - s3:ListBucket
                 Resource:
-                - !Sub 'arn:aws:s3:::${StaticWebsiteBucket}'
+                - !Sub 'arn:${AWS::Partition}:s3:::${StaticWebsiteBucket}'
               - Effect: Allow
                 Action:
                 - s3:GetObject
                 Resource:
-                - !Sub 'arn:aws:s3:::${StaticWebsiteBucket}/*'
+                - !Sub 'arn:${AWS::Partition}:s3:::${StaticWebsiteBucket}/*'
 
   #############################################################
   # s3 bucket storing ALB access log
@@ -215,13 +215,13 @@ Resources:
               - !Ref 'AWS::Region'
               - BucketPrincipal
           Action: s3:PutObject
-          Resource: !Sub 'arn:aws:s3:::${AccessLogBucket}/*'
+          Resource: !Sub 'arn:${AWS::Partition}:s3:::${AccessLogBucket}/*'
         - Sid: AWSLogDeliveryWrite
           Effect: Allow
           Principal:
             Service: delivery.logs.amazonaws.com
           Action: s3:PutObject
-          Resource: !Sub 'arn:aws:s3:::${AccessLogBucket}/*'
+          Resource: !Sub 'arn:${AWS::Partition}:s3:::${AccessLogBucket}/*'
           Condition:
             StringEquals:
               s3:x-amz-acl: bucket-owner-full-control
@@ -230,7 +230,7 @@ Resources:
           Principal:
             Service: delivery.logs.amazonaws.com
           Action: s3:GetBucketAcl
-          Resource: !Sub 'arn:aws:s3:::${AccessLogBucket}'
+          Resource: !Sub 'arn:${AWS::Partition}:s3:::${AccessLogBucket}'
 
   #############################################################
   # VPC endpoint for ALB to invoke in private API gateway
@@ -282,7 +282,7 @@ Resources:
     Type: AWS::IAM::Role
     Properties:
       ManagedPolicyArns:
-        -  arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+        - !Sub arn:${AWS::Partition}:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
       AssumeRolePolicyDocument:
         Version: 2012-10-17
         Statement:
@@ -428,7 +428,7 @@ Resources:
     Type: AWS::ElasticLoadBalancingV2::Listener
     Properties:
       Certificates:
-      - CertificateArn: !Sub 'arn:aws:acm:${AWS::Region}:${AWS::AccountId}:certificate/${SSLCertID}'
+      - CertificateArn: !Sub 'arn:${AWS::Partition}:acm:${AWS::Region}:${AWS::AccountId}:certificate/${SSLCertID}'
       DefaultActions:
         - Type: forward
           TargetGroupArn: !Ref ALBApiGatewayTargetGroup
@@ -518,7 +518,7 @@ Resources:
       DomainNameConfigurations:
         - EndpointType: REGIONAL
           CertificateArn:
-            !Sub 'arn:aws:acm:${AWS::Region}:${AWS::AccountId}:certificate/${SSLCertID}'
+            !Sub 'arn:${AWS::Partition}:acm:${AWS::Region}:${AWS::AccountId}:certificate/${SSLCertID}'
 
   #############################################################
   # Backend Lambda and API Gateway
@@ -586,7 +586,7 @@ Resources:
                       schema:
                         $ref: "#/components/schemas/Empty"
               x-amazon-apigateway-integration:
-                uri: !Sub 'arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${BackendFunction.Arn}/invocations'
+                uri: !Sub 'arn:${AWS::Partition}:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${BackendFunction.Arn}/invocations'
                 responses:
                   default:
                     statusCode: "200"
@@ -682,7 +682,7 @@ Resources:
               x-amazon-apigateway-integration:
                 credentials: !GetAtt StaticWebsiteBucketRole.Arn
                 httpMethod: "GET"
-                uri: !Sub "arn:aws:apigateway:${AWS::Region}:s3:path/${StaticWebsiteBucket}/index.html"
+                uri: !Sub "arn:${AWS::Partition}:apigateway:${AWS::Region}:s3:path/${StaticWebsiteBucket}/index.html"
                 responses:
                   "4\\d{2}":
                     statusCode: "400"
@@ -768,7 +768,7 @@ Resources:
               x-amazon-apigateway-integration:
                 credentials: !GetAtt StaticWebsiteBucketRole.Arn
                 httpMethod: "GET"
-                uri: !Sub "arn:aws:apigateway:${AWS::Region}:s3:path/${StaticWebsiteBucket}/{proxy}"
+                uri: !Sub "arn:${AWS::Partition}:apigateway:${AWS::Region}:s3:path/${StaticWebsiteBucket}/{proxy}"
                 responses:
                   "4\\d{2}":
                     statusCode: "400"

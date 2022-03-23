@@ -47,7 +47,7 @@ IngressCidr='REPLACE_ME'
 # Deploy CloudFormation stack                                           #
 #########################################################################
 aws cloudformation deploy \
-    --template-file template.yml \
+    --template-file template.yaml \
     --stack-name ${StackName} \
     --parameter-overrides \
         "Environment=${Environment}" \
