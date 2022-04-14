@@ -24,7 +24,7 @@ Before the solution is deployed, prepare the followings in your AWS account.
 
 ### Steps
 
-You need to deploy the CloudFormation stack and upload the static contents to S3 bucket. You could use a deployment script [deploy.sh](deploy.sh) to deploy automatically. To run [deploy.sh](deploy.sh), setup your development environment in Linux, macOS or [AWS Cloud9](https://docs.aws.amazon.com/cloud9/latest/user-guide/create-environment.html). Make sure [AWS CLI](https://docs.aws.amazon.com/cli/latest/userguide/install-cliv2.html) and [jq](https://stedolan.github.io/jq/download/) are installed.
+You need to deploy the CloudFormation stack and upload the static contents to S3 bucket. You could use a deployment script [deploy.sh](deploy.sh) to deploy automatically. To run [deploy.sh](deploy.sh), setup your development environment in Linux, macOS or [AWS Cloud9](https://docs.aws.amazon.com/cloud9/latest/user-guide/create-environment.html). Make sure [AWS CLI](https://docs.aws.amazon.com/cli/latest/userguide/install-cliv2.html) is installed.
 
 Next, do the followings to deploy the architecture using AWS CloudFormation.
 

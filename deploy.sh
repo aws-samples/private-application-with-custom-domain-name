@@ -63,5 +63,5 @@ aws cloudformation deploy \
 #########################################################################
 # Upload static website to S3 bucket                                    #
 #########################################################################
-StaticWebsiteBucket=$(aws cloudformation describe-stacks --stack-name ${StackName} | jq -r '.Stacks[].Outputs[] | select(.OutputKey=="StaticWebsiteBucket") | .OutputValue')
+StaticWebsiteBucket=$(aws cloudformation describe-stacks --stack-name ${StackName} --query "Stacks[0].Outputs[?OutputKey=='StaticWebsiteBucket'].OutputValue" --output text)
 aws s3 cp --sse --recursive ./static/ s3://${StaticWebsiteBucket}
